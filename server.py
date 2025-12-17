@@ -3,7 +3,7 @@ import threading
 import json
 
 # Konfiguration
-HOST = '0.0.0.0'
+HOST = '127.0.0.1'
 PORT = 5555
 
 # Hier speichern wir die aktiven Nutzer: {'name': client_socket}

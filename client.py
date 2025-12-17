@@ -59,7 +59,8 @@ def start_client():
         client.connect((host, 5555))
         # 1. Username senden zur Registrierung
         client.send(username.encode('utf-8'))
-    except:
+    except Exception as e:
+        print(f"[-] Verbindung fehlgeschlagen: {e}")
         print("[!] Konnte keine Verbindung herstellen.")
         return
 
@@ -69,7 +70,6 @@ def start_client():
     thread.start()
 
     print(f"[*] Verbunden als {username}. Format: 'Empfänger:Nachricht'")
-    print("[*] Beispiel: 'Axel:Wir treffen uns an der Firewall'")
     
     # 2. Sende-Schleife
     while True:
