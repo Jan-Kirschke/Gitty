@@ -2,96 +2,136 @@ import socket
 import threading
 import json
 import sys
-import base64
+import os
 
-# --- Verschlüsselungs-Logik (Simuliert professionelle XOR-Crypto) ---
-def encrypt_decrypt(text, key):
-    """Verschlüsselt oder entschlüsselt Text mit einem Schlüssel."""
-    result = []
-    for i in range(len(text)):
-        # XOR-Operation zwischen Zeichen und Schlüssel
-        char_code = ord(text[i]) ^ ord(key[i % len(key)])
-        result.append(chr(char_code))
-    return "".join(result)
+class GittyClient:
+    def __init__(self):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.username = ""
+        self.key = ""
+        self.running = True
+        
+        self.C_RED = "\033[91m"
+        self.C_GREEN = "\033[92m"
+        self.C_CYAN = "\033[96m"
+        self.C_RESET = "\033[0m"
 
-# --- Netzwerk-Logik ---
-def receive_messages(client_socket, key):
-    """Hört ständig auf neue Nachrichten."""
-    while True:
-        try:
-            data = client_socket.recv(1024).decode('utf-8')
-            if not data:
-                break
-            
+    def clear_screen(self):
+        os.system('cls' if os.name == 'nt' else 'clear')
+
+    def print_banner(self):
+        banner = f"""{self.C_GREEN}
+      _____ _ _   _           
+     / ____(_) | | |          
+    | |  __ _| |_| |_ _   _   
+    | | |_ | | __| __| | | |  
+    | |__| | | |_| |_| |_| |  
+     \_____|_|\__|\__|\__, |  
+                       __/ |  
+    TERMINAL v3.1     |___/   
+    {self.C_RESET}"""
+        print(banner)
+
+    def xor_cipher(self, text):
+        result = []
+        for i in range(len(text)):
+            char_code = ord(text[i]) ^ ord(self.key[i % len(self.key)])
+            result.append(chr(char_code))
+        return "".join(result)
+
+    def listen(self):
+        while self.running:
             try:
-                packet = json.loads(data)
-                sender = packet.get("from")
-                raw_msg = packet.get("msg")
+                data = self.sock.recv(4096).decode('utf-8')
+                if not data:
+                    break
+                
+                try:
+                    pkg = json.loads(data)
+                    sender = pkg.get("from")
+                    payload = pkg.get("msg")
 
-                if sender == "SYSTEM":
-                    print(f"\n[!] {raw_msg}")
-                else:
-                    # Nachricht entschlüsseln
-                    decrypted = encrypt_decrypt(raw_msg, key)
-                    print(f"\n[{sender}]: {decrypted}")
-                    # Zeige auch den verschlüsselten "Hacker-Code" (optional)
-                    # print(f"   (Raw Data: {repr(raw_msg)})") 
+                    if sender == "SYSTEM":
+                        print(f"\r{self.C_GREEN}[!] {payload}{self.C_RESET}")
+                    else:
+                        decrypted = self.xor_cipher(payload)
+                        print(f"\r{self.C_CYAN}[{sender}] > {decrypted}{self.C_RESET}")
                     
-                print("Du: ", end="", flush=True) # Eingabeaufforderung wiederherstellen
-            except:
-                print(f"\n{data}") # Fallback für reine Textnachrichten
+                    print(f"{self.C_GREEN}[Me] > {self.C_RESET}", end="", flush=True)
+                
+                except json.JSONDecodeError:
+                    print(f"\r[raw] {data}")
 
-        except:
-            print("\n[!] Verbindung zum Server verloren.")
-            client_socket.close()
-            sys.exit()
+            except ConnectionAbortedError:
+                break
+            except Exception:
+                break
+        
+        print(f"\n{self.C_RED}[!] Disconnected from server.{self.C_RESET}")
+        self.sock.close()
+        sys.exit()
 
-def start_client():
-    print("--- GITTY TERMINAL v3.1 ---")
-    
-    # Setup
-    host = input("Server IP (Enter für localhost): ") or 'localhost'
-    username = input("Dein Username: ")
-    crypto_key = input("Verschlüsselungs-Key (muss mit Partner übereinstimmen): ")
+    def connect(self):
+        self.clear_screen()
+        self.print_banner()
+        
+        raw_host = input(f"Target IP [default: localhost]: ").strip()
+        
+        if ":" in raw_host:
+            raw_host = raw_host.split(":")[0]
+        
+        if raw_host in ["", "0.0.0.0"]:
+            host = "127.0.0.1"
+        else:
+            host = raw_host
 
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        client.connect((host, 5555))
-        # 1. Username senden zur Registrierung
-        client.send(username.encode('utf-8'))
-    except Exception as e:
-        print(f"[-] Verbindung fehlgeschlagen: {e}")
-        print("[!] Konnte keine Verbindung herstellen.")
-        return
+        self.username = input("Username: ").strip()
+        while not self.username:
+            self.username = input("Username cannot be empty: ").strip()
 
-    # Starten des "Hörers" im Hintergrund
-    thread = threading.Thread(target=receive_messages, args=(client, crypto_key))
-    thread.daemon = True # Beendet Thread wenn Hauptprogramm endet
-    thread.start()
+        self.key = input("Encryption Key: ").strip()
+        
+        print(f"\n[*] Connecting to {host}:5555...")
 
-    print(f"[*] Verbunden als {username}. Format: 'Empfänger:Nachricht'")
-    
-    # 2. Sende-Schleife
-    while True:
         try:
-            msg_input = input("Du: ")
+            self.sock.connect((host, 5555))
+            self.sock.send(self.username.encode('utf-8'))
+            print(f"{self.C_GREEN}[+] Connection established.{self.C_RESET}\n")
             
-            if ":" in msg_input:
-                target, content = msg_input.split(":", 1)
+            listener = threading.Thread(target=self.listen, daemon=True)
+            listener.start()
+
+            self.input_loop()
+
+        except Exception as e:
+            print(f"{self.C_RED}[-] Connection failed: {e}{self.C_RESET}")
+
+    def input_loop(self):
+        print(f"Format: {self.C_CYAN}Target:Message{self.C_RESET}")
+        
+        while True:
+            try:
+                msg = input(f"{self.C_GREEN}[Me] > {self.C_RESET}")
                 
-                # Verschlüsseln VOR dem Senden
-                encrypted_content = encrypt_decrypt(content, crypto_key)
-                
-                # Als JSON verpacken
-                packet = json.dumps({"to": target.strip(), "msg": encrypted_content})
-                client.send(packet.encode('utf-8'))
-            else:
-                print("[!] Falsches Format! Nutze: 'Name:Nachricht'")
-                
-        except KeyboardInterrupt:
-            print("\n[!] Beende Gitty.")
-            client.close()
-            break
+                if ":" in msg:
+                    target, text = msg.split(":", 1)
+                    encrypted = self.xor_cipher(text)
+                    packet = json.dumps({"to": target.strip(), "msg": encrypted})
+                    self.sock.send(packet.encode('utf-8'))
+                elif msg.lower() == "exit":
+                    break
+                else:
+                    print(f"{self.C_RED}[!] Invalid format. Use User:Message{self.C_RESET}")
+                    
+            except KeyboardInterrupt:
+                break
+            except Exception:
+                break
+
+        self.running = False
+        self.sock.close()
+        print(f"\n{self.C_RED}[*] Session ended.{self.C_RESET}")
 
 if __name__ == "__main__":
-    start_client()
+    client = GittyClient()
+    client.connect()
