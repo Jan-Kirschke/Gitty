@@ -14,7 +14,7 @@ class GittyClient:
         # ANSI Colors
         self.C_RED = "\033[91m"
         self.C_GREEN = "\033[92m"
-        self.C_YELLOW = "\033[93m" # Neu: Gelb für Sterne
+        self.C_YELLOW = "\033[93m"
         self.C_CYAN = "\033[96m"
         self.C_RESET = "\033[0m"
 
@@ -46,8 +46,8 @@ class GittyClient:
         """Converts a number (1-5) into a star string."""
         try:
             r = int(rating)
-            # Begrenze Rating auf max 10
-            if r > 10: r = 10
+            # Rating max 1_000
+            if r > 1000: r = 1000
             if r < 0: r = 0
             return f"{self.C_YELLOW}{'★' * r}{self.C_RESET}"
         except:
@@ -73,7 +73,6 @@ class GittyClient:
                         decrypted = self.xor_cipher(payload)
                         stars = self.get_stars(rating)
                         
-                        # Anzeige formatieren: [User] ★★★ > Nachricht
                         prefix = f"[{sender}]"
                         if rating > 0:
                             prefix += f" {stars}"
@@ -98,7 +97,6 @@ class GittyClient:
         self.clear_screen()
         self.print_banner()
         
-        # Connection Logic
         raw_host = input(f"Target IP [default: localhost]: ").strip()
         if ":" in raw_host: raw_host = raw_host.split(":")[0]
         host = "127.0.0.1" if raw_host in ["", "0.0.0.0"] else raw_host

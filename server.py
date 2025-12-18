@@ -1,76 +1,121 @@
 import socket
 import threading
 import json
+import logging
+from datetime import datetime
 
-# Konfiguration
-HOST = '127.0.0.1'
+# --- Konfiguration & Logging ---
+HOST = '0.0.0.0'  # '0.0.0.0' erlaubt Verbindungen aus dem gesamten Netzwerk (wichtig für Pi)
 PORT = 5555
 
-# Hier speichern wir die aktiven Nutzer: {'name': client_socket}
+# Logging Setup: Schreibt in Konsole UND in eine Datei 'gitty_server.log'
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler("gitty_server.log"),
+        logging.StreamHandler()
+    ]
+)
+
+# Speicher für aktive Nutzer: {'username': socket_obj}
 clients = {}
 
-def broadcast(message, sender_name=None):
-    """Sendet Systemnachrichten an alle."""
-    for name, client in clients.items():
-        if name != sender_name:
+def broadcast_system_msg(message, exclude_user=None):
+    """Sendet eine System-Nachricht im JSON-Format an alle verbundenen Clients."""
+    system_packet = json.dumps({
+        "from": "SYSTEM",
+        "msg": message,
+        "rating": 0
+    })
+    
+    for name, client_sock in list(clients.items()):
+        if name != exclude_user:
             try:
-                client.send(message.encode('utf-8'))
-            except:
-                pass
+                client_sock.send(system_packet.encode('utf-8'))
+            except Exception as e:
+                logging.error(f"Fehler beim Broadcast an {name}: {e}")
 
-def handle_client(client, addr):
-    """Behandelt die Verbindung eines einzelnen Clients."""
+def handle_client(client_sock, addr):
+    """Behandelt die Kommunikation mit einem einzelnen Client."""
     username = None
+    logging.info(f"Neue Verbindung von Adresse: {addr}")
+
     try:
-        # 1. Benutzername empfangen
-        username = client.recv(1024).decode('utf-8')
-        clients[username] = client
-        print(f"[+] Neuer User: {username} ({addr})")
-        broadcast(f"--- {username} ist dem Netzwerk beigetreten ---", username)
+        # 1. Erster Empfang: Benutzername
+        username = client_sock.recv(1024).decode('utf-8').strip()
+        
+        if not username or username in clients:
+            logging.warning(f"Anmeldung abgelehnt: Name '{username}' ungültig oder vergeben.")
+            client_sock.close()
+            return
+
+        clients[username] = client_sock
+        logging.info(f"User '{username}' erfolgreich angemeldet.")
+        broadcast_system_msg(f"--- {username} ist dem Netzwerk beigetreten ---", exclude_user=username)
 
         # 2. Nachrichten-Schleife
         while True:
-            data = client.recv(1024).decode('utf-8')
+            data = client_sock.recv(4096).decode('utf-8')
             if not data:
                 break
             
-            # Wir erwarten JSON: {"to": "Empfänger", "msg": "VerschlüsselterText"}
             try:
+                # Empfange das Paket vom Absender
                 msg_obj = json.loads(data)
                 target_user = msg_obj.get('to')
-                encrypted_content = msg_obj.get('msg')
-
+                
+                # Wir fügen den Absendernamen zum Paket hinzu, bevor wir es weiterleiten
+                msg_obj["from"] = username
+                
                 if target_user in clients:
-                    # Weiterleiten an den Ziel-Nutzer
-                    packet = json.dumps({"from": username, "msg": encrypted_content})
-                    clients[target_user].send(packet.encode('utf-8'))
+                    # Das komplette Paket (inkl. msg, rating, etc.) weiterleiten
+                    forward_packet = json.dumps(msg_obj)
+                    clients[target_user].send(forward_packet.encode('utf-8'))
                 else:
-                    err = json.dumps({"from": "SYSTEM", "msg": f"User '{target_user}' nicht gefunden."})
-                    client.send(err.encode('utf-8'))
+                    # Fehlermeldung an den Absender, falls Ziel nicht existiert
+                    error_msg = json.dumps({
+                        "from": "SYSTEM", 
+                        "msg": f"User '{target_user}' ist nicht online.",
+                        "rating": 0
+                    })
+                    client_sock.send(error_msg.encode('utf-8'))
 
             except json.JSONDecodeError:
-                pass # Ignoriere fehlerhafte Daten
+                logging.error(f"Ungültiges JSON von {username} erhalten.")
 
     except Exception as e:
-        print(f"[-] Fehler bei {addr}: {e}")
+        logging.error(f"Fehler im Thread von {username if username else addr}: {e}")
+    
     finally:
-        # Aufräumen, wenn User geht
+        # Aufräumen bei Verbindungsabbruch
         if username and username in clients:
             del clients[username]
-            client.close()
-            broadcast(f"--- {username} hat das Netzwerk verlassen ---")
-            print(f"[-] User getrennt: {username}")
+            broadcast_system_msg(f"--- {username} hat das Netzwerk verlassen ---")
+            logging.info(f"User '{username}' getrennt.")
+        client_sock.close()
 
 def start_server():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind((HOST, PORT))
-    server.listen()
-    print(f"[*] Gitty-Server läuft auf {HOST}:{PORT}")
+    # Erlaubt den sofortigen Neustart des Ports nach einem Crash
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    
+    try:
+        server.bind((HOST, PORT))
+        server.listen()
+        logging.info(f"Gitty-Server gestartet auf {HOST}:{PORT}")
+    except Exception as e:
+        logging.critical(f"Server konnte nicht starten: {e}")
+        return
 
     while True:
-        client, addr = server.accept()
-        thread = threading.Thread(target=handle_client, args=(client, addr))
-        thread.start()
+        try:
+            client_sock, addr = server.accept()
+            thread = threading.Thread(target=handle_client, args=(client_sock, addr), daemon=True)
+            thread.start()
+        except KeyboardInterrupt:
+            logging.info("Server wird durch User beendet...")
+            break
 
 if __name__ == "__main__":
     start_server()
