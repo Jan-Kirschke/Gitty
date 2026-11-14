@@ -1,0 +1,2 @@
+# Gitty - Secure Terminal Messenger
+# Standard library only - no external dependencies required

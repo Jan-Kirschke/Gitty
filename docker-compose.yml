@@ -1,0 +1,7 @@
+services:
+  gitty:
+    build:
+      context: .
+    ports:
+      - "5555:5555"
+    restart: unless-stopped
