@@ -165,6 +165,7 @@ class GittyServer:
             self.clients[username] = conn
 
         self._broadcast_system(f"--- {username} joined the network ---", exclude=username)
+        self._send_user_list(username)
         return username
 
     def _process_packet(self, sender: str, data: str) -> None:
