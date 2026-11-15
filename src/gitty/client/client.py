@@ -1,3 +1,4 @@
+import json
 import socket
 import threading
 import sys
@@ -41,7 +42,7 @@ class GittyClient:
   ██╔═══╝ ██╔══██╗██║╚════██║██║╚██╗██║
   ██║     ██║  ██║██║███████║██║ ╚████║
   ╚═╝     ╚═╝  ╚═╝╚═╝╚══════╝╚═╝  ╚═══╝
-  {self.C_CYAN}Secure Terminal Messenger v4.0{self.C_RESET}
+  {self.C_CYAN}Secure Terminal Messenger v4.1{self.C_RESET}
   {self.C_RESET}"""
         print(banner)
 
@@ -143,16 +144,29 @@ class GittyClient:
         sender = packet.get("from", "")
         content = packet.get("msg", "")
         rating = packet.get("rating", 0)
+        timestamp = packet.get("timestamp")
+        timestamp_label = f"[{timestamp}] " if timestamp else ""
 
         if sender == "SYSTEM":
-            print(f"\r{self.C_GREEN}[SYS] {content}{self.C_RESET}")
+            if "users" in packet:
+                users = packet.get("users") or []
+                online_users = ", ".join(users) if users else "(keine)"
+                print(
+                    f"\r{self.C_GREEN}{timestamp_label}[USERS] "
+                    f"{online_users}{self.C_RESET}"
+                )
+            else:
+                print(f"\r{self.C_GREEN}{timestamp_label}[SYS] {content}{self.C_RESET}")
         else:
             decrypted = xor_encrypt(content, self.encryption_key)
             stars = self._get_stars(rating)
             prefix = f"[{sender}]"
             if rating > 0:
                 prefix += f" {stars}"
-            print(f"\r{self.C_CYAN}{prefix} > {decrypted}{self.C_RESET}")
+            print(
+                f"\r{self.C_CYAN}{timestamp_label}{prefix} > "
+                f"{decrypted}{self.C_RESET}"
+            )
 
         if self.state == "connected":
             print(f"{self.C_GREEN}[{self.username}] > {self.C_RESET}", end="", flush=True)
@@ -235,7 +249,12 @@ class GittyClient:
 """)
 
     def _list_users(self) -> None:
-        print(f"{self.C_YELLOW}[*] User list requested (contact server admin for this feature){self.C_RESET}")
+        try:
+            assert self.socket is not None
+            request = json.dumps({"command": "users"}) + "\n"
+            self.socket.sendall(request.encode("utf-8"))
+        except Exception as e:
+            print(f"{self.C_RED}[Error] Failed to request users: {e}{self.C_RESET}")
 
     def disconnect(self) -> None:
         self.running = False

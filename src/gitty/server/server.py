@@ -1,3 +1,4 @@
+import json
 import socket
 import threading
 import time
@@ -102,8 +103,9 @@ class GittyServer:
                 for username, conn in self.clients.items()
                 if conn.is_timed_out(self.config.ping_timeout + self.config.ping_interval)
             ]
-            for username in timed_out:
-                self._disconnect_client(username, "Connection timeout")
+
+        for username in timed_out:
+            self._disconnect_client(username, "Connection timeout")
 
     def _handle_client(self, client_sock: socket.socket, addr: tuple) -> None:
         username: Optional[str] = None
@@ -171,21 +173,52 @@ class GittyServer:
             self.logger.warning(f"Invalid packet from {sender}")
             return
 
+        if packet.get("command") == "users":
+            self._send_user_list(sender)
+            return
+
         target = packet.get("to")
         if not target:
             return
 
+        packet["from"] = sender
+        packet["timestamp"] = packet.get("timestamp") or datetime.now().isoformat(
+            timespec="seconds"
+        )
+        forward_packet = (json.dumps(packet) + "\n").encode("utf-8")
+
         with self.clients_lock:
-            if target in self.clients:
-                try:
-                    self.clients[target].socket.send((data + "\n").encode("utf-8"))
-                    self.clients[target].update_activity()
-                except Exception as e:
-                    self.logger.error(f"Failed to send to {target}: {e}")
-            else:
-                self._send_error_to_user(
-                    sender, f"User '{target}' is not online"
-                )
+            target_connection = self.clients.get(target)
+
+        if target_connection:
+            try:
+                target_connection.socket.sendall(forward_packet)
+                target_connection.update_activity()
+            except Exception as e:
+                self.logger.error(f"Failed to send to {target}: {e}")
+        else:
+            self._send_error_to_user(sender, f"User '{target}' is not online")
+
+    def _send_user_list(self, username: str) -> None:
+        with self.clients_lock:
+            connection = self.clients.get(username)
+            users = sorted(self.clients)
+
+        if not connection:
+            return
+
+        user_packet = {
+            "from": "SYSTEM",
+            "msg": "Online users",
+            "users": users,
+            "rating": 0,
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+        }
+        try:
+            connection.socket.sendall((json.dumps(user_packet) + "\n").encode("utf-8"))
+            connection.update_activity()
+        except Exception as e:
+            self.logger.error(f"Failed to send user list to {username}: {e}")
 
     def _send_error_to_user(self, username: str, message: str) -> None:
         with self.clients_lock:
@@ -195,20 +228,34 @@ class GittyServer:
 
     def _send_error(self, sock: socket.socket, message: str) -> None:
         try:
-            error_packet = f'{{"from":"SYSTEM","msg":"{message}","rating":0}}\n'
-            sock.send(error_packet.encode("utf-8"))
+            error_packet = {
+                "from": "SYSTEM",
+                "msg": message,
+                "rating": 0,
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+            }
+            sock.sendall((json.dumps(error_packet) + "\n").encode("utf-8"))
         except Exception:
             pass
 
     def _broadcast_system(self, message: str, exclude: Optional[str] = None) -> None:
-        system_packet = f'{{"from":"SYSTEM","msg":"{message}","rating":0}}\n'
+        system_packet = {
+            "from": "SYSTEM",
+            "msg": message,
+            "rating": 0,
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+        }
+        encoded_packet = (json.dumps(system_packet) + "\n").encode("utf-8")
         with self.clients_lock:
-            for username, conn in self.clients.items():
-                if username != exclude:
-                    try:
-                        conn.socket.send(system_packet.encode("utf-8"))
-                    except Exception as e:
-                        self.logger.error(f"Broadcast failed to {username}: {e}")
+            connections = [
+                conn for username, conn in self.clients.items() if username != exclude
+            ]
+
+        for conn in connections:
+            try:
+                conn.socket.sendall(encoded_packet)
+            except Exception as e:
+                self.logger.error(f"Broadcast failed: {e}")
 
     def _disconnect_client(self, username: str, reason: str = "") -> None:
         with self.clients_lock:
@@ -228,8 +275,10 @@ class GittyServer:
         self.running = False
 
         with self.clients_lock:
-            for username in list(self.clients.keys()):
-                self._disconnect_client(username, "Server shutdown")
+            usernames = list(self.clients.keys())
+
+        for username in usernames:
+            self._disconnect_client(username, "Server shutdown")
 
         try:
             self.server_socket.close()

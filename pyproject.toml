@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "gitty"
-version = "4.0.0"
-description = "Secure Terminal Messenger"
+name = "gitty-messenger"
+version = "4.1.0"
+description = "Secure terminal messenger with online users and timestamps"
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
@@ -23,6 +23,14 @@ classifiers = [
 [project.scripts]
 gitty-server = "gitty.server.server:main"
 gitty-client = "gitty.client.client:main"
+
+[project.optional-dependencies]
+release = ["build>=1.2", "twine>=5.0"]
+
+[project.urls]
+Homepage = "https://github.com/Jan-Kirschke/Gitty"
+Repository = "https://github.com/Jan-Kirschke/Gitty"
+Issues = "https://github.com/Jan-Kirschke/Gitty/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
