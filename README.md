@@ -32,22 +32,8 @@ On first launch, Gitty signs you in via the **GitHub OAuth Device Flow** (`https
 
 ```text
 $ gitty
-  _____ _ _   _
- / ____(_) | | |
-| |  __ _| |_| |_ _   _
-| | |_ | | __| __| | | |
-| |__| | | |_| |_| |_| |
- \_____|_|\__|\__|\__, |
-                  __/ |
-                 |___/
-  Secure Terminal Messenger v5.0
+<img width="1792" height="2400" alt="Gemini_Generated_Image_ma0wj4ma0wj4ma0w" src="https://github.com/user-attachments/assets/00c22b73-08e3-405f-8507-89c2e4fbe43e" />
 
-> /create dev
-Raum betreten: dev
-> /friends
-Freunde: octocat: online
-> hello world!
-[13:37:42] [dev] jan-kirschke: hello world!
 ```
 
 Connect to a custom host or port anytime:
