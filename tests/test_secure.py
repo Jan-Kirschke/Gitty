@@ -170,6 +170,65 @@ class ChatTests(unittest.TestCase):
         self.chat.command(self.admin, '/help-admin')
         self.assertIn('/admin broadcast', self.admin.messages[-1])
 
+    def test_rejects_multiline_spoofing_and_non_https(self):
+        from src.gitty.secure import request
+        self.chat.command(self.admin, '/create sec')
+        for bad in ('hi\n[ANNOUNCEMENT] fake', 'hi\radmin: fake'):
+            with self.assertRaises(ValueError):
+                self.chat.command(self.admin, bad)
+        with self.assertRaises(ValueError):
+            request('http://api.github.com/user')
+
+    def test_validate_identity_checks_types_and_login(self):
+        from src.gitty.secure import validate_identity
+        self.assertEqual(validate_identity({'id': 42, 'login': 'octo-cat'}), {'id': 42, 'login': 'octo-cat'})
+        for bad in (None, {}, {'id': True, 'login': 'a'}, {'id': -1, 'login': 'a'}, {'id': 1, 'login': '-bad'}, {'id': 1, 'login': 'bad\nname'}):
+            with self.assertRaises(ValueError):
+                validate_identity(bad)
+
+    def test_empty_rooms_pruned_and_self_kick_blocked(self):
+        self.chat.command(self.admin, '/create temp')
+        self.assertIn('temp', self.chat.rooms)
+        self.chat.command(self.admin, '/leave')
+        self.assertNotIn('temp', self.chat.rooms)
+        self.chat.command(self.friend, '/create room2')
+        self.chat.remove_peer(self.friend)
+        self.assertNotIn('room2', self.chat.rooms)
+        with self.assertRaises(ValueError):
+            self.chat.command(self.admin, '/admin kick admin')
+
+    def test_rate_limits_and_friend_login_sync(self):
+        from src.gitty.secure import Peer
+        class DummySock:
+            def sendall(self, data):
+                pass
+        p = Peer(DummySock(), {'id': 10, 'login': 'spammer'})
+        self.chat.peers[10] = p
+        self.chat.command(p, '/create rl')
+        for i in range(14):
+            self.chat.command(p, f'msg {i}')
+        with self.assertRaises(ValueError):
+            self.chat.command(p, 'overflow')
+        with patch('src.gitty.secure.request', return_value={'id': 99, 'login': 'OldName'}) as req:
+            self.chat.command(self.admin, '/friend add OldName')
+            self.chat.command(self.admin, '/friend add oldname')
+            self.assertEqual(req.call_count, 1)
+        self.chat.sync_login({'id': 99, 'login': 'NewName'})
+        self.chat.command(self.admin, '/friends')
+        self.assertIn('NewName: offline', self.admin.messages[-1])
+
+    def test_insecure_bypass_requires_exact_1(self):
+        from src.gitty.secure import client_main
+        with patch('sys.argv', ['client.py', 'example.com']), \
+                patch('src.gitty.client.animation.print_banner'), \
+                patch('src.gitty.secure.github_login', side_effect=KeyboardInterrupt), \
+                patch('src.gitty.secure.ssl.create_default_context') as ctx, \
+                patch.dict('os.environ', {'GITTY_INSECURE': '0'}), \
+                patch('builtins.print') as mock_print:
+            client_main()
+            self.assertNotIn('TLS-Zertifikatsprüfung deaktiviert', ' '.join(str(c.args[0]) for c in mock_print.call_args_list if c.args))
+            self.assertNotEqual(ctx.return_value.verify_mode, 0)
+
 
 if __name__ == '__main__':
     unittest.main()

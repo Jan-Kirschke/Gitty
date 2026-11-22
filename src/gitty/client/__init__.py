@@ -1,3 +1,3 @@
-from .client import GittyClient
+from .animation import print_banner
 
-__all__ = ["GittyClient"]
+__all__ = ["print_banner"]
