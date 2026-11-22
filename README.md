@@ -32,7 +32,32 @@ On first launch, Gitty signs you in via the **GitHub OAuth Device Flow** (`https
 ```text
 $ gitty
 ```
-<img width="1792" height="2400" alt="Gemini_Generated_Image_ma0wj4ma0wj4ma0w" src="https://github.com/user-attachments/assets/00c22b73-08e3-405f-8507-89c2e4fbe43e" />
+<pre style="background-color: #1e1e1e; color: #d4d4d4; padding: 20px; border-radius: 8px; font-family: 'Fira Code', 'JetBrains Mono', Consolas, monospace; font-size: 14px; line-height: 1.45; overflow-x: auto;"><span style="color: #23d18b;">  _____ _ _   _
+ / ____(_) | | |
+| |  __ _| |_| |_ _   _
+| | |_ | | __| __| | | |
+| |__| | | |_| |_| |_| |
+ \_____|_|\__|\__|\__, |
+                  __/ |
+                 |___/</span>
+<span style="color: #29b8db;">  Secure Terminal Messenger v3.2</span>
+
+<span style="color: #23d18b; font-weight: bold;">Chat &amp; Rooms</span>
+<span style="color: #23d18b;">  /rooms                  </span>List active chatrooms
+<span style="color: #23d18b;">  /create ROOM            </span>Create a new chatroom
+<span style="color: #23d18b;">  /join ROOM              </span>Join a chatroom
+<span style="color: #23d18b;">  /leave                  </span>Leave the current chatroom
+<span style="color: #23d18b;">  /users                  </span>List users in the room
+<span style="color: #23d18b;">  /msg USER TEXT          </span>Send a direct message
+
+<span style="color: #d670d6; font-weight: bold;">Friends</span>
+<span style="color: #d670d6;">  /friends                </span>Show friends &amp; online status
+<span style="color: #d670d6;">  /friend add USER        </span>Add a GitHub user
+<span style="color: #d670d6;">  /friend remove USER     </span>Remove a friend
+
+<span style="color: #3b8eea; font-weight: bold;">General</span>
+<span style="color: #3b8eea;">  /help                   </span>Show help
+<span style="color: #f14c4c;">  /exit                   </span>Disconnect and quit</pre>
 
 Connect to a custom host or port anytime:
 
