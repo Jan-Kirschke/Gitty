@@ -10,7 +10,7 @@
 [![Python](https://img.shields.io/badge/python-%3E%3D3.8-3776ab?style=flat-square)](https://www.python.org/)
 [![Dependencies](https://img.shields.io/badge/dependencies-0%20(stdlib%20only)-brightgreen?style=flat-square)](#why-gitty)
 [![Transport](https://img.shields.io/badge/transport-TLS%201.2%2B-0ea5e9?style=flat-square)](#security-model)
-[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg?style=flat-square)](https://github.com/Jan-Kirschke/Gitty/blob/main/pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg?style=flat-square)](https://github.com/Jan-Kirschke/Gitty/blob/main/LICENSE)
 
 [Quickstart](#quickstart) • [Why Gitty?](#why-gitty) • [Commands](#commands) • [Self-Hosting](#self-hosting) • [Security](#security-model) • [Development](#development)
 
@@ -20,9 +20,17 @@
 
 ## Quickstart
 
-Install via `pip` and start chatting in seconds:
+Install or run directly with `pipx`, `uv`, or `pip`:
 
 ```bash
+# Isolated CLI install (recommended)
+pipx install gitty-messenger
+gitty
+
+# Or run directly with uv
+uvx --from gitty-messenger gitty
+
+# Or via pip
 pip install gitty-messenger
 gitty
 ```
