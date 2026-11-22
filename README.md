@@ -31,7 +31,7 @@ On first launch, Gitty signs you in via the **GitHub OAuth Device Flow** (`https
 
 ```text
 $ gitty
-```
+
 <pre style="background-color: #1e1e1e; color: #d4d4d4; padding: 20px; border-radius: 8px; font-family: 'Fira Code', 'JetBrains Mono', Consolas, monospace; font-size: 14px; line-height: 1.45; overflow-x: auto;"><span style="color: #23d18b;">  _____ _ _   _
  / ____(_) | | |
 | |  __ _| |_| |_ _   _
@@ -60,7 +60,7 @@ $ gitty
 <span style="color: #f14c4c;">  /exit                   </span>Disconnect and quit</pre>
 
 Connect to a custom host or port anytime:
-
+```
 ```bash
 gitty chat.jankirschke.de -p 5555
 ```
