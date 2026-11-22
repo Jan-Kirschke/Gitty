@@ -1,6 +1,7 @@
 <div align="center">
 
-<img width="4128" height="1024" alt="Gemini_Generated_Image_ddcpgnddcpgnddcp" src="https://github.com/user-attachments/assets/2b2a951c-22b8-4f00-995e-64ef39e47b25" />
+<img width="1019" height="250" alt="Screenshot 2026-11-22 181857" src="https://github.com/user-attachments/assets/e1dff157-f126-4f94-b472-a7411fc778ae" />
+
 
 # Gitty
 
