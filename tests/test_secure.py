@@ -142,16 +142,33 @@ class ChatTests(unittest.TestCase):
             self.assertIn('TLS-Handshake fehlgeschlagen', printed)
 
     def test_grouped_help_formatting(self):
-        from src.gitty.secure import HELP, BANNER, format_help
+        from src.gitty.secure import HELP, ADMIN_HELP, BANNER, format_help
         self.assertIn('\033[92m', BANNER)
-        for section in ('Chat & Räume', 'Freunde', 'Admin', 'Allgemein'):
+        self.assertTrue(BANNER.endswith('\n'))
+        self.assertIn('Secure Terminal Messenger v3.2', BANNER)
+        for section in ('Chat & Rooms', 'Friends', 'General'):
             self.assertIn(section, HELP)
+        self.assertNotIn('Admin', HELP)
+        self.assertNotIn('/admin', HELP)
+        self.assertIn('Admin', ADMIN_HELP)
         with patch('sys.stdout', new_callable=io.StringIO) as out, \
                 patch.object(out, 'isatty', return_value=True):
             colored = format_help()
-            self.assertIn('\033[96mChat & Räume\033[0m', colored)
+            self.assertIn('\033[1;92mChat & Rooms\033[0m', colored)
+            self.assertIn('\033[1;95mFriends\033[0m', colored)
+            self.assertIn('\033[1;94mGeneral\033[0m', colored)
             self.assertIn('\033[92m  /rooms', colored)
+            self.assertIn('\033[95m  /friends', colored)
+            self.assertIn('\033[94m  /help', colored)
             self.assertIn('\033[91m  /exit', colored)
+            self.assertIn('\033[93m  /admin online', format_help(ADMIN_HELP))
+
+    def test_help_admin_restricted_to_admin(self):
+        self.friend.identity['login'] = 'Jan-Kirschke'
+        with self.assertRaises(ValueError):
+            self.chat.command(self.friend, '/help-admin')
+        self.chat.command(self.admin, '/help-admin')
+        self.assertIn('/admin broadcast', self.admin.messages[-1])
 
 
 if __name__ == '__main__':

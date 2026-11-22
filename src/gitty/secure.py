@@ -132,6 +132,10 @@ class Chat:
                 text = 'Freunde: ' + (', '.join(f'{login}: ' + ('online' if fid in self.peers else 'offline') for fid, login in rows) or 'keine')
             elif cmd == 'help':
                 text = HELP
+            elif cmd == 'help-admin':
+                if uid != self.admin_id:
+                    raise ValueError('Keine Admin-Berechtigung')
+                text = ADMIN_HELP
             elif cmd in ('users', 'who'):
                 if peer.room:
                     in_room = [p.identity['login'] for p in self.peers.values() if p.room == peer.room]
@@ -281,29 +285,29 @@ def server_main():
                 raw.close()
 
 
-HELP = '''Chat & Räume
-  /rooms                  Aktive Räume anzeigen
-  /create RAUM            Neuen Raum erstellen
-  /join RAUM              Raum betreten
-  /leave                  Aktuellen Raum verlassen
-  /users                  Teilnehmer im Raum anzeigen
-  /msg NAME TEXT          Direktnachricht senden
+HELP = '''Chat & Rooms
+  /rooms                  List active chatrooms
+  /create ROOM            Create a new chatroom
+  /join ROOM              Join a chatroom
+  /leave                  Leave the current chatroom
+  /users                  List users in the room
+  /msg USER TEXT          Send a direct message
 
-Freunde
-  /friends                Freundesliste & Status anzeigen
-  /friend add NAME        GitHub-Nutzer hinzufügen
-  /friend remove NAME     Freund entfernen
+Friends
+  /friends                Show friends & online status
+  /friend add USER        Add a GitHub user
+  /friend remove USER     Remove a friend
 
-Admin
-  /admin online           Alle verbundenen Nutzer anzeigen
-  /admin kick NAME        Nutzer trennen
-  /admin broadcast TEXT   Ankündigung an alle senden
+General
+  /help                   Show help
+  /exit                   Disconnect and quit
 
-Allgemein
-  /help                   Hilfe anzeigen
-  /exit                   Verbindung trennen
+Inside a room, just type to chat. Rooms and messages are not saved.'''
 
-Im Raum einfach schreiben. Räume und Nachrichten werden nicht gespeichert.'''
+ADMIN_HELP = '''Admin
+  /admin online           List all connected users
+  /admin kick USER        Disconnect a user
+  /admin broadcast TEXT   Send announcement to everyone'''
 
 BANNER = '''\033[92m  _____ _ _   _         
  / ____(_) | | |        
@@ -313,26 +317,35 @@ BANNER = '''\033[92m  _____ _ _   _
  \\_____|_|\\__|\\__|\\__, |
                   __/ |
                  |___/ \033[0m
-\033[96m  Secure Terminal Messenger v5.0\033[0m'''
+\033[96m  Secure Terminal Messenger v3.2\033[0m
+'''
+
+SECTION_COLORS = {
+    'Chat & Rooms': ('\033[1;92m', '\033[92m'),
+    'Friends': ('\033[1;95m', '\033[95m'),
+    'Admin': ('\033[1;93m', '\033[93m'),
+    'General': ('\033[1;94m', '\033[94m'),
+}
 
 
-def format_help():
+def format_help(text=HELP):
     import sys
     if not sys.stdout.isatty():
-        return HELP
+        return text
     lines = []
-    section = ''
-    for line in HELP.splitlines():
-        if line and not line.startswith(' ') and not line.startswith('Im Raum'):
-            section = line
-            lines.append(f'\033[96m{line}\033[0m')
+    cmd_color = '\033[92m'
+    for line in text.splitlines():
+        if line in SECTION_COLORS:
+            header_color, cmd_color = SECTION_COLORS[line]
+            lines.append(f'{header_color}{line}\033[0m')
         elif line.startswith('  /exit'):
             cmd, desc = line[:26], line[26:]
             lines.append(f'\033[91m{cmd}\033[0m{desc}')
         elif line.startswith('  /'):
-            color = '\033[93m' if section == 'Admin' else '\033[92m'
             cmd, desc = line[:26], line[26:]
-            lines.append(f'{color}{cmd}\033[0m{desc}')
+            lines.append(f'{cmd_color}{cmd}\033[0m{desc}')
+        elif line:
+            lines.append(f'\033[90m{line}\033[0m')
         else:
             lines.append(line)
     return '\n'.join(lines)
