@@ -1,15 +1,6 @@
 <div align="center">
 
-```text
-  _____ _ _   _
- / ____(_) | | |
-| |  __ _| |_| |_ _   _
-| | |_ | | __| __| | | |
-| |__| | | |_| |_| |_| |
- \_____|_|\__|\__|\__, |
-                  __/ |
-                 |___/
-```
+<img width="4128" height="1024" alt="Gemini_Generated_Image_ddcpgnddcpgnddcp" src="https://github.com/user-attachments/assets/2b2a951c-22b8-4f00-995e-64ef39e47b25" />
 
 # Gitty
 
