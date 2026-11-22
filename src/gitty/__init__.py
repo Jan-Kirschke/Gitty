@@ -7,8 +7,6 @@ from .common import (
     ServerConfig,
     ClientConfig,
 )
-from .server import GittyServer
-from .client import GittyClient
 from .secure import server_main, client_main, Chat, Peer
 
 __all__ = [
@@ -17,8 +15,6 @@ __all__ = [
     "ClientInfo",
     "ServerConfig",
     "ClientConfig",
-    "GittyServer",
-    "GittyClient",
     "server_main",
     "client_main",
     "Chat",

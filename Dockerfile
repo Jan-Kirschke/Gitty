@@ -9,7 +9,11 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 
-RUN pip install --no-cache-dir --no-deps .
+RUN pip install --no-cache-dir --no-deps . && \
+    useradd --system --no-create-home --uid 10001 gitty && \
+    mkdir -p /data && chown gitty:gitty /data
+
+USER gitty
 
 EXPOSE 5555
 

@@ -1,8 +1,11 @@
 """TLS-only Gitty protocol. GitHub tokens are verified, never persisted."""
 import argparse
+from collections import deque
 import json
+import logging
 import os
 from pathlib import Path
+import re
 import socket
 import ssl
 import sqlite3
@@ -16,9 +19,13 @@ CLIENT_ID = 'Ov23lijEgap8bwwpxgPs'
 HOST = 'chat.jankirschke.de'
 LIMIT = 16384
 TOKEN_FILE = Path.home() / '.gitty' / 'token'
+LOGIN_RE = re.compile(r'^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$')
+LOG = logging.getLogger('gitty.secure')
 
 
 def request(url, data=None, token=None):
+    if not url.startswith('https://'):
+        raise ValueError('Nur HTTPS-URLs erlaubt')
     headers = {'Accept': 'application/json', 'User-Agent': 'Gitty'}
     if token:
         headers['Authorization'] = 'Bearer ' + token
@@ -27,9 +34,22 @@ def request(url, data=None, token=None):
         return json.load(response)
 
 
+def validate_identity(identity):
+    if not isinstance(identity, dict):
+        raise ValueError('Ungültige GitHub-Antwort')
+    uid = identity.get('id')
+    login = identity.get('login')
+    if isinstance(uid, bool) or not isinstance(uid, int) or uid <= 0:
+        raise ValueError('Ungültige GitHub-ID')
+    if not isinstance(login, str) or not LOGIN_RE.match(login):
+        raise ValueError('Ungültiger GitHub-Benutzername')
+    return {'id': uid, 'login': login}
+
+
 def github_login():
     token = os.environ.get('GITHUB_TOKEN')
     if token:
+        print('WARNUNG: GITHUB_TOKEN aus Umgebung wird zur Anmeldung an den Server gesendet.')
         return token
     if TOKEN_FILE.is_file():
         saved = TOKEN_FILE.read_text(encoding='utf-8').strip()
@@ -84,10 +104,22 @@ class Peer:
         self.sock, self.identity = sock, identity
         self.lock = threading.Lock()
         self.room = None
+        self._cmd_times = deque()
+        self._lookup_times = deque()
 
     def send(self, text):
         with self.lock:
             self.sock.sendall((json.dumps({'text': text}, ensure_ascii=False) + '\n').encode())
+
+    def check_rate(self, bucket, limit, window):
+        now = time.monotonic()
+        with self.lock:
+            while bucket and now - bucket[0] > window:
+                bucket.popleft()
+            if len(bucket) >= limit:
+                return False
+            bucket.append(now)
+            return True
 
 
 class Chat:
@@ -98,22 +130,62 @@ class Chat:
         self.peers = {}
         self.rooms = set()
         self.admin_id = admin_id
+        self._user_cache = {}
+
+    def _prune_room(self, room):
+        if room and not any(p.room == room for p in self.peers.values()):
+            self.rooms.discard(room)
+
+    def _resolve_user(self, target):
+        now = time.monotonic()
+        key = target.lower()
+        with self.lock:
+            cached = self._user_cache.get(key)
+            if cached and now - cached[0] < 300:
+                return cached[1]
+        identity = validate_identity(request('https://api.github.com/users/' + target))
+        with self.lock:
+            if len(self._user_cache) >= 500:
+                self._user_cache.clear()
+            self._user_cache[key] = (now, identity)
+        return identity
+
+    def sync_login(self, identity):
+        with self.lock, self.db:
+            self.db.execute(
+                'UPDATE friends SET login=? WHERE friend=? AND login!=?',
+                (identity['login'], identity['id'], identity['login']),
+            )
+
+    def remove_peer(self, peer):
+        with self.lock:
+            if self.peers.get(peer.identity['id']) is peer:
+                del self.peers[peer.identity['id']]
+            old_room = peer.room
+            peer.room = None
+            self._prune_room(old_room)
 
     def command(self, peer, line):
+        if '\n' in line or '\r' in line:
+            raise ValueError('Mehrzeilige Eingaben sind nicht erlaubt')
         words = line.split(maxsplit=2)
         if not words:
             return
+        if hasattr(peer, 'check_rate') and not peer.check_rate(peer._cmd_times, 15, 5):
+            raise ValueError('Zu viele Nachrichten/Befehle; bitte kurz warten')
         cmd = words[0].lstrip('/')
         uid = peer.identity['id']
         name = peer.identity['login']
         if cmd == 'friend' and len(words) == 3 and words[1] in ('add', 'remove'):
             target = words[2]
-            if not target or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-' for c in target):
+            if not LOGIN_RE.match(target):
                 raise ValueError('Ungültiger GitHub-Name')
-            # Resolve outside the state lock; friendships use immutable GitHub IDs.
             if words[1] == 'add':
+                if hasattr(peer, 'check_rate') and not peer.check_rate(peer._lookup_times, 5, 60):
+                    raise ValueError('Zu viele Kontakt-Abfragen; bitte kurz warten')
+                # Resolve outside the state lock; friendships use immutable GitHub IDs.
                 try:
-                    identity = request('https://api.github.com/users/' + target)
+                    identity = self._resolve_user(target)
                 except urllib.error.HTTPError as err:
                     if err.code == 404:
                         raise ValueError(f'GitHub-Benutzer "{target}" existiert nicht')
@@ -125,6 +197,7 @@ class Chat:
                     self.db.execute('DELETE FROM friends WHERE owner=? AND (login=? COLLATE NOCASE)', (uid, target))
             peer.send('Kontaktliste aktualisiert')
             return
+        kick_target = None
         with self.lock:
             targets = [peer]
             if cmd == 'friends':
@@ -154,15 +227,20 @@ class Chat:
                     target_peer = next((p for p in self.peers.values() if p.identity['login'].lower() == words[2].lower()), None)
                     if not target_peer:
                         raise ValueError(f'Benutzer "{words[2]}" ist nicht online')
-                    try:
-                        target_peer.send('Du wurdest vom Admin getrennt.')
-                        target_peer.sock.shutdown(socket.SHUT_RDWR)
-                    except OSError:
-                        pass
+                    if target_peer is peer:
+                        raise ValueError('Eigenes Konto kann nicht gekickt werden')
+                    kick_target = target_peer
+                    if self.peers.get(target_peer.identity['id']) is target_peer:
+                        del self.peers[target_peer.identity['id']]
+                    old_room = target_peer.room
+                    target_peer.room = None
+                    self._prune_room(old_room)
+                    LOG.info('Admin %s kicked %s', name, target_peer.identity['login'])
                     text = f'{words[2]} wurde getrennt'
                 elif sub == 'broadcast' and len(words) == 3:
                     targets = list(self.peers.values())
                     now = time.strftime('%H:%M:%S')
+                    LOG.info('Admin %s sent broadcast', name)
                     text = f'[{now}] [ANNOUNCEMENT] {words[2]}'
                 else:
                     raise ValueError('Admin-Befehle: /admin online | /admin kick NAME | /admin broadcast TEXT')
@@ -180,10 +258,15 @@ class Chat:
                     self.rooms.add(room)
                 if room not in self.rooms:
                     raise ValueError('Raum existiert nicht')
+                old_room = peer.room
                 peer.room = room
+                if old_room != room:
+                    self._prune_room(old_room)
                 text = 'Raum betreten: ' + room
             elif cmd == 'leave':
+                old_room = peer.room
                 peer.room = None
+                self._prune_room(old_room)
                 text = 'Raum verlassen'
             elif cmd == 'msg' and len(words) == 3:
                 targets = [p for p in self.peers.values() if p.identity['login'].lower() == words[1].lower()]
@@ -200,6 +283,12 @@ class Chat:
                 text = f'[{now}] [{peer.room}] {name}: {line}'
             else:
                 raise ValueError('Erst /join RAUM oder /msg NAME TEXT verwenden')
+        if kick_target is not None:
+            try:
+                kick_target.send('Du wurdest vom Admin getrennt.')
+                kick_target.sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
         for target in targets:
             try:
                 target.send(text)
@@ -208,6 +297,7 @@ class Chat:
 
 
 def server_main():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
     parser = argparse.ArgumentParser()
     parser.add_argument('--cert', default=os.environ.get('GITTY_CERT'))
     parser.add_argument('--key', default=os.environ.get('GITTY_KEY'))
@@ -222,17 +312,20 @@ def server_main():
     context.load_cert_chain(args.cert, args.key)
     chat = Chat(args.database, args.admin_id)
     slots = threading.BoundedSemaphore(100)
+    ip_lock = threading.Lock()
+    ip_counts = {}
+    max_per_ip = 5
 
-    def handle(raw):
+    def handle(raw, client_ip):
         peer = None
         try:
-            raw.settimeout(30)
+            raw.settimeout(10)
             with context.wrap_socket(raw, server_side=True) as sock, sock.makefile('rb') as stream:
                 try:
                     token = receive(stream).get('token')
                     if not isinstance(token, str) or not token or len(token) > 4096:
                         raise ValueError('Token fehlt')
-                    identity = request('https://api.github.com/user', token=token)
+                    identity = validate_identity(request('https://api.github.com/user', token=token))
                     del token
                     candidate = Peer(sock, identity)
                     with chat.lock:
@@ -240,7 +333,9 @@ def server_main():
                             raise ValueError('Konto bereits verbunden')
                         chat.peers[identity['id']] = candidate
                         peer = candidate
+                    chat.sync_login(identity)
                 except (ValueError, urllib.error.URLError) as err:
+                    LOG.warning('Auth failed from %s: %s', client_ip, type(err).__name__)
                     try:
                         sock.sendall((json.dumps({'text': str(err)}, ensure_ascii=False) + '\n').encode())
                     except OSError:
@@ -254,7 +349,7 @@ def server_main():
                     if packet.get('ping') is True:
                         continue
                     line = packet.get('line')
-                    if not isinstance(line, str) or len(line) > 4000:
+                    if not isinstance(line, str) or len(line) > 4000 or '\n' in line or '\r' in line:
                         raise ValueError('Ungültige Nachricht')
                     try:
                         chat.command(peer, line.strip())
@@ -266,9 +361,13 @@ def server_main():
             pass
         finally:
             if peer:
-                with chat.lock:
-                    if chat.peers.get(peer.identity['id']) is peer:
-                        del chat.peers[peer.identity['id']]
+                chat.remove_peer(peer)
+            with ip_lock:
+                remaining = ip_counts.get(client_ip, 1) - 1
+                if remaining <= 0:
+                    ip_counts.pop(client_ip, None)
+                else:
+                    ip_counts[client_ip] = remaining
             raw.close()
             slots.release()
 
@@ -278,11 +377,15 @@ def server_main():
         listener.listen(100)
         print('Gitty TLS listening on', args.port, flush=True)
         while True:
-            raw, _ = listener.accept()
-            if slots.acquire(blocking=False):
-                threading.Thread(target=handle, args=(raw,), daemon=True).start()
-            else:
-                raw.close()
+            raw, addr = listener.accept()
+            client_ip = addr[0]
+            with ip_lock:
+                if ip_counts.get(client_ip, 0) >= max_per_ip or not slots.acquire(blocking=False):
+                    LOG.warning('Rejected connection from %s (rate/slot limit)', client_ip)
+                    raw.close()
+                    continue
+                ip_counts[client_ip] = ip_counts.get(client_ip, 0) + 1
+            threading.Thread(target=handle, args=(raw, client_ip), daemon=True).start()
 
 
 HELP = '''Chat & Rooms
@@ -364,8 +467,9 @@ def client_main():
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     if args.ca_cert:
         context.load_verify_locations(args.ca_cert)
-    if os.environ.get('GITTY_INSECURE'):
+    if os.environ.get('GITTY_INSECURE') == '1':
         # shortcut: cert check bypass for local testing only
+        print('WARNUNG: TLS-Zertifikatsprüfung deaktiviert (GITTY_INSECURE=1)!')
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
     try:
