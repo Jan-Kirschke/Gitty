@@ -290,9 +290,8 @@ class GittyServer:
 
 
 def main() -> None:
-    config = ServerConfig()
-    server = GittyServer(config)
-    server.start()
+    from ..secure import server_main
+    server_main()
 
 
 if __name__ == "__main__":

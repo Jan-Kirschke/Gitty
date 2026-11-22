@@ -3,4 +3,14 @@ services:
     image: gitty:local
     ports:
       - "5555:5555"
+    environment:
+      GITTY_CERT: /certs/fullchain.pem
+      GITTY_KEY: /certs/privkey.pem
+      GITTY_ADMIN_ID: ${GITTY_ADMIN_ID:?Set verified numeric GitHub admin ID}
+      GITTY_DATABASE: /data/gitty.sqlite3
+    volumes:
+      - ./certs:/certs:ro
+      - gitty-data:/data
     restart: unless-stopped
+volumes:
+  gitty-data:

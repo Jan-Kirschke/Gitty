@@ -3,6 +3,7 @@ import socket
 import threading
 import sys
 from typing import Optional
+from .animation import print_banner
 
 from ..common import (
     ClientConfig,
@@ -43,7 +44,8 @@ class GittyClient:
   \\____|___| |_|   |_|     |_|
   {self.C_CYAN}Secure Terminal Messenger v4.1{self.C_RESET}
   {self.C_RESET}"""
-        print(banner)
+        print_banner(banner)
+        print("Tippe help für die verfügbaren Befehle.")
 
     def print_help(self) -> None:
         print(f"""
@@ -189,7 +191,7 @@ class GittyClient:
 
                 if msg.lower() == "exit":
                     break
-                elif msg.lower() == "help":
+                elif msg.lower() in ("help", "/help"):
                     self.print_help()
                 elif msg.lower() == "clear":
                     self.clear_screen()
@@ -267,28 +269,8 @@ class GittyClient:
 
 
 def main() -> None:
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Gitty - Secure Terminal Messenger",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument("host", nargs="?", default="127.0.0.1", help="Server address")
-    parser.add_argument("-p", "--port", type=int, default=5555, help="Server port")
-    parser.add_argument("-u", "--username", help="Username")
-    parser.add_argument("-k", "--key", help="Encryption key")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
-
-    args = parser.parse_args()
-
-    config = ClientConfig()
-    client = GittyClient(config)
-    client.connect(
-        host=args.host,
-        port=args.port,
-        username=args.username,
-        key=args.key,
-    )
+    from ..secure import client_main
+    client_main()
 
 
 if __name__ == "__main__":

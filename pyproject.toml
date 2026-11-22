@@ -4,10 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gitty-messenger"
-version = "4.1.0"
-description = "Secure terminal messenger with online users and timestamps"
+version = "5.0.0"
+description = "TLS-encrypted terminal messenger with GitHub auth, chatrooms, saved friends, and admin controls"
 readme = "README.md"
 requires-python = ">=3.8"
+keywords = ["terminal", "messenger", "chat", "tls", "github", "cli"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -18,11 +19,14 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Communications :: Chat",
 ]
 
 [project.scripts]
-gitty-server = "gitty.server.server:main"
-gitty-client = "gitty.client.client:main"
+gitty = "gitty.secure:client_main"
+gitty-server = "gitty.secure:server_main"
+gitty-client = "gitty.secure:client_main"
 
 [project.optional-dependencies]
 release = ["build>=1.2", "twine>=5.0"]

@@ -1,4 +1,4 @@
-__version__ = "4.1.0"
+__version__ = "5.0.0"
 
 from .common import (
     Message,
@@ -9,6 +9,7 @@ from .common import (
 )
 from .server import GittyServer
 from .client import GittyClient
+from .secure import server_main, client_main, Chat, Peer
 
 __all__ = [
     "Message",
@@ -18,4 +19,8 @@ __all__ = [
     "ClientConfig",
     "GittyServer",
     "GittyClient",
+    "server_main",
+    "client_main",
+    "Chat",
+    "Peer",
 ]
