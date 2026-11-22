@@ -2,7 +2,6 @@
 
 <img width="1019" height="250" alt="Screenshot 2026-11-22 181857" src="https://github.com/user-attachments/assets/e1dff157-f126-4f94-b472-a7411fc778ae" />
 
-
 # Gitty
 
 **A zero-dependency, TLS-encrypted terminal messenger powered by GitHub identity.**
@@ -32,9 +31,8 @@ On first launch, Gitty signs you in via the **GitHub OAuth Device Flow** (`https
 
 ```text
 $ gitty
-<img width="1792" height="2400" alt="Gemini_Generated_Image_ma0wj4ma0wj4ma0w" src="https://github.com/user-attachments/assets/00c22b73-08e3-405f-8507-89c2e4fbe43e" />
-
 ```
+<img width="1792" height="2400" alt="Gemini_Generated_Image_ma0wj4ma0wj4ma0w" src="https://github.com/user-attachments/assets/00c22b73-08e3-405f-8507-89c2e4fbe43e" />
 
 Connect to a custom host or port anytime:
 
