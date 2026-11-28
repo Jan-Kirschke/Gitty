@@ -6,9 +6,12 @@ import logging
 import os
 from pathlib import Path
 import re
+import shutil
 import socket
 import ssl
 import sqlite3
+import subprocess
+import sys
 import threading
 import time
 import urllib.request
@@ -46,23 +49,88 @@ def validate_identity(identity):
     return {'id': uid, 'login': login}
 
 
+def copy_to_clipboard(text):
+    if sys.platform == 'win32':
+        cmd = ['clip']
+    elif sys.platform == 'darwin':
+        cmd = ['pbcopy']
+    else:
+        cmd = next(
+            (c for c in (['wl-copy'], ['xclip', '-selection', 'clipboard'], ['xsel', '--clipboard', '--input']) if shutil.which(c[0])),
+            None,
+        )
+    if not cmd:
+        return False
+    try:
+        subprocess.run(cmd, input=text, text=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _load_token():
+    if not TOKEN_FILE.is_file():
+        return None, None
+    raw = TOKEN_FILE.read_text(encoding='utf-8').strip()
+    if not raw:
+        return None, None
+    if raw.startswith('{'):
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            TOKEN_FILE.unlink(missing_ok=True)
+            return None, None
+        if isinstance(data, dict):
+            access = data.get('access_token')
+            refresh = data.get('refresh_token')
+            return (access if isinstance(access, str) and access else None,
+                    refresh if isinstance(refresh, str) and refresh else None)
+        TOKEN_FILE.unlink(missing_ok=True)
+        return None, None
+    return raw, None
+
+
+def _save_token(access_token, refresh_token=None):
+    TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps({'access_token': access_token, 'refresh_token': refresh_token}) if refresh_token else access_token
+    TOKEN_FILE.write_text(payload, encoding='utf-8')
+    try:
+        os.chmod(TOKEN_FILE, 0o600)
+    except OSError:
+        pass
+
+
 def github_login():
     token = os.environ.get('GITHUB_TOKEN')
     if token:
         print('WARNUNG: GITHUB_TOKEN aus Umgebung wird zur Anmeldung an den Server gesendet.')
         return token
-    if TOKEN_FILE.is_file():
-        saved = TOKEN_FILE.read_text(encoding='utf-8').strip()
-        if saved:
-            try:
-                request('https://api.github.com/user', token=saved)
-                return saved
-            except urllib.error.HTTPError as err:
-                if err.code != 401:
-                    raise
-                TOKEN_FILE.unlink(missing_ok=True)
+    saved, refresh = _load_token()
+    if saved:
+        try:
+            request('https://api.github.com/user', token=saved)
+            return saved
+        except urllib.error.HTTPError as err:
+            if err.code != 401:
+                raise
+            if refresh:
+                try:
+                    refreshed = request('https://github.com/login/oauth/access_token', {
+                        'client_id': CLIENT_ID,
+                        'grant_type': 'refresh_token',
+                        'refresh_token': refresh,
+                    })
+                    if 'access_token' in refreshed:
+                        _save_token(refreshed['access_token'], refreshed.get('refresh_token'))
+                        return refreshed['access_token']
+                except urllib.error.HTTPError as refresh_err:
+                    if refresh_err.code not in (400, 401):
+                        raise
+            TOKEN_FILE.unlink(missing_ok=True)
     data = request('https://github.com/login/device/code', {'client_id': CLIENT_ID})
-    print('Öffne https://github.com/login/device und gib diesen Code ein:', data['user_code'])
+    code = data['user_code']
+    copied = ' (in die Zwischenablage kopiert)' if copy_to_clipboard(code) else ''
+    print(f'Öffne https://github.com/login/device und gib diesen Code ein: {code}{copied}')
     deadline = time.monotonic() + data['expires_in']
     interval = data.get('interval', 5)
     while time.monotonic() < deadline:
@@ -72,12 +140,7 @@ def github_login():
             'grant_type': 'urn:ietf:params:oauth:grant-type:device_code'})
         if 'access_token' in result:
             token = result['access_token']
-            TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-            TOKEN_FILE.write_text(token, encoding='utf-8')
-            try:
-                os.chmod(TOKEN_FILE, 0o600)
-            except OSError:
-                pass
+            _save_token(token, result.get('refresh_token'))
             return token
         error = result.get('error')
         if error == 'slow_down':

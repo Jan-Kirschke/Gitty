@@ -93,11 +93,15 @@ class ChatTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             token_path = Path(directory) / 'token'
             with patch('src.gitty.secure.TOKEN_FILE', token_path), \
+                    patch('src.gitty.secure.copy_to_clipboard', return_value=True) as clip, \
                     patch('src.gitty.secure.request', side_effect=[
                         {'user_code': 'test', 'device_code': 'secret', 'expires_in': 100, 'interval': 5},
                         {'error': 'authorization_pending'}, {'error': 'slow_down'}, {'access_token': 'token'}
-                    ]), patch('src.gitty.secure.time.sleep') as sleep, patch('builtins.print'), patch.dict('os.environ', {}, clear=True):
+                    ]), patch('src.gitty.secure.time.sleep') as sleep, patch('builtins.print') as mock_print, patch.dict('os.environ', {}, clear=True):
                 self.assertEqual(github_login(), 'token')
+                clip.assert_called_once_with('test')
+                printed = ' '.join(str(c.args[0]) for c in mock_print.call_args_list if c.args)
+                self.assertIn('in die Zwischenablage kopiert', printed)
                 self.assertEqual([call.args[0] for call in sleep.call_args_list], [5, 5, 10])
                 self.assertEqual(token_path.read_text(encoding='utf-8'), 'token')
 
@@ -114,6 +118,7 @@ class ChatTests(unittest.TestCase):
                 req.assert_called_once_with('https://api.github.com/user', token='saved-tok')
 
             with patch('src.gitty.secure.TOKEN_FILE', token_path), \
+                    patch('src.gitty.secure.copy_to_clipboard', return_value=False), \
                     patch('src.gitty.secure.request', side_effect=[
                         urllib.error.HTTPError('https://api.github.com/user', 401, 'Unauthorized', {}, None),
                         {'user_code': 'NEW', 'device_code': 'dev', 'expires_in': 100, 'interval': 5},
@@ -121,6 +126,44 @@ class ChatTests(unittest.TestCase):
                     ]), patch('src.gitty.secure.time.sleep'), patch('builtins.print'), patch.dict('os.environ', {}, clear=True):
                 self.assertEqual(github_login(), 'fresh-tok')
                 self.assertEqual(token_path.read_text(encoding='utf-8'), 'fresh-tok')
+
+    def test_refresh_token_avoids_reauth_and_falls_back_on_error(self):
+        import urllib.error
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            token_path = Path(directory) / 'token'
+            token_path.write_text(json.dumps({'access_token': 'ghu_old', 'refresh_token': 'ghr_1'}), encoding='utf-8')
+            with patch('src.gitty.secure.TOKEN_FILE', token_path), \
+                    patch('src.gitty.secure.request', side_effect=[
+                        urllib.error.HTTPError('https://api.github.com/user', 401, 'Unauthorized', {}, None),
+                        {'access_token': 'ghu_new', 'refresh_token': 'ghr_2'},
+                    ]) as req, \
+                    patch.dict('os.environ', {}, clear=True):
+                self.assertEqual(github_login(), 'ghu_new')
+                self.assertEqual(req.call_count, 2)
+                saved = json.loads(token_path.read_text(encoding='utf-8'))
+                self.assertEqual(saved, {'access_token': 'ghu_new', 'refresh_token': 'ghr_2'})
+
+            with patch('src.gitty.secure.TOKEN_FILE', token_path), \
+                    patch('src.gitty.secure.copy_to_clipboard', return_value=True), \
+                    patch('src.gitty.secure.request', side_effect=[
+                        urllib.error.HTTPError('https://api.github.com/user', 401, 'Unauthorized', {}, None),
+                        {'error': 'bad_refresh_token'},
+                        {'user_code': 'ABCD-1234', 'device_code': 'dev2', 'expires_in': 100, 'interval': 5},
+                        {'access_token': 'ghu_3', 'refresh_token': 'ghr_3'},
+                    ]), patch('src.gitty.secure.time.sleep'), patch('builtins.print'), patch.dict('os.environ', {}, clear=True):
+                self.assertEqual(github_login(), 'ghu_3')
+                self.assertEqual(json.loads(token_path.read_text(encoding='utf-8')), {'access_token': 'ghu_3', 'refresh_token': 'ghr_3'})
+
+    def test_copy_to_clipboard(self):
+        from src.gitty.secure import copy_to_clipboard
+        with patch('src.gitty.secure.sys.platform', 'win32'), \
+                patch('src.gitty.secure.subprocess.run') as run:
+            self.assertTrue(copy_to_clipboard('ABCD-1234'))
+            self.assertEqual(run.call_args.args[0], ['clip'])
+            self.assertEqual(run.call_args.kwargs['input'], 'ABCD-1234')
+            run.side_effect = OSError('no clip')
+            self.assertFalse(copy_to_clipboard('ABCD-1234'))
 
     def test_login_via_env_token(self):
         with patch.dict('os.environ', {'GITHUB_TOKEN': 'env-token'}):

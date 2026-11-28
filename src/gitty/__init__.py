@@ -1,4 +1,4 @@
-__version__ = "5.0.1"
+__version__ = "5.0.2"
 
 from .secure import server_main, client_main, Chat, Peer
 
